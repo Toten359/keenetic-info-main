@@ -43,17 +43,20 @@ class SignalPolicyEngine:
                 fps = "12"
             self.profiles.append({"resolution": resolution, "bitrate": bitrate, "fps": fps})
 
-        if not self.config.input_device:
-            logger.info("[POLICY] Используется тестовый источник")
-            self.ffmpeg.input_device = "testsrc"
+        # Check if we have any devices configured
+        if not config.device_configs:
+            logger.info("[POLICY] Нет сконфигурированных устройств, используется тестовый источник")
         else:
-            logger.info(f"[POLICY] Используется устройство ввода: {self.config.input_device}")
+            logger.info(f"[POLICY] Сконфигурировано {len(config.device_configs)} устройств")
+            for device_name, device_config in config.device_configs.items():
+                logger.info(f"[POLICY] - Устройство: {device_name}, выход: {device_config.output}")
+                
         logger.info(f"[POLICY] Инициализация завершена с профилями: {self.profiles}")
 
     def evaluate_and_apply(self, signal_data: dict):
         """
         Evaluates the signal-to-noise ratio (SNR) based on the provided signal data
-        and applies the appropriate profile settings.
+        and applies the appropriate profile settings to all active devices.
 
         Args:
             signal_data (dict): A dictionary containing signal information. Expected keys:
@@ -63,28 +66,23 @@ class SignalPolicyEngine:
         Behavior:
             - Calculates the SNR as the difference between RSSI and noise.
             - Logs the SNR, RSSI, and noise values with a timestamp.
-            - Selects a profile based on the SNR value:
-                - SNR < 5: Selects the first profile.
-                - 5 <= SNR < 10: Selects the worst profile.
-                - 30 <= SNR < 40: Selects the best profile.
-                - SNR >= 40: Selects the sixth profile.
-            - Logs the selected profile's resolution, bitrate, and frame rate.
-            - Restarts the ffmpeg process with the selected profile if needed.
+            - Selects a profile based on the SNR value.
+            - Applies the selected profile to all active devices.
 
         Returns:
             None
         """
-        # rssi = int(signal_data.get("rssi", -100))
-        # noise = int(signal_data.get("noise", -100))
-        rssi = 100
-        noise = 50
+        rssi = int(signal_data.get("rssi", -100))
+        noise = int(signal_data.get("noise", -100))
         snr = rssi - noise
         logger.info(f"[SIGNAL INFO] SNR: {snr}, RSSI: {rssi}, NOISE: {noise}")
-
 
         degradation_steps = self.config.degradation_steps
         effective_snr = max(snr, 0)
         profile_index = degradation_steps - (effective_snr // 10)
         profile_index = max(0, min(degradation_steps, profile_index))
         profile = self.profiles[profile_index]
+        
+        # Apply the selected profile to all devices
+        logger.info(f"[POLICY] Применение профиля {profile} ко всем устройствам")
         self.ffmpeg.restart_if_needed(profile)
